@@ -66,6 +66,7 @@ function savedNote(){return currentAnswer()?.comment||'';}
 function count(){return [...state.answers.values()].filter(isRated).length;}
 function total(){return state.data.totalQuestions||state.data.cases.reduce((sum,c)=>sum+c.total,0);}
 function pendingItems(){return Object.values(state.pendingDoc?.pending||{});}
+function autoBatchReady(){return pendingItems().filter(isRated).length>=CriterioQueue.BATCH_SIZE;}
 function pendingNewItems(){
   const flight=state.pendingDoc?.inFlight;
   // A recovered batch may already be included in bootstrap after a lost reply.
@@ -168,7 +169,7 @@ function showProfileLoading(person){
 }
 async function enter(id){
   if(state.busy)return;const person=state.data.evaluators.find(p=>p.id===id);if(!person)return;setBusy(true);const finishLoading=showProfileLoading(person);
-  try{state.evaluator=person;state.caseData=null;state.caseId=null;state.answers.clear();state.recoveringBatchId=null;state.data.caseProgress??={};makeQueue(id);await refreshLocal();state.recoveringBatchId=state.pendingDoc?.inFlight?.payload.batchId||null;renderCaseMenu();persistIdentity(id);announce(`Hola, ${state.evaluator.name}. Elige un caso para continuar.`);if(pendingItems().filter(isRated).length>=10||state.pendingDoc.inFlight)void sendPending();}
+  try{state.evaluator=person;state.caseData=null;state.caseId=null;state.answers.clear();state.recoveringBatchId=null;state.data.caseProgress??={};makeQueue(id);await refreshLocal();state.recoveringBatchId=state.pendingDoc?.inFlight?.payload.batchId||null;renderCaseMenu();persistIdentity(id);announce(`Hola, ${state.evaluator.name}. Elige un caso para continuar.`);if(autoBatchReady()||state.pendingDoc.inFlight)void sendPending();}
   catch(error){state.queue?.close();state.queue=null;renderEntry();$('#entry-error').textContent=error.message;}finally{await finishLoading();setBusy(false);if(state.evaluator)$('#case-menu-title')?.focus({preventScroll:true});else $('#entry-error').focus?.();}
 }
 function evaluationHeaderHTML(){
@@ -290,6 +291,7 @@ async function vote(criterion,rating){
     await putVote(ratings,state.note);state.dirty=false;state.note=savedNote();
     state.activeCriterion=criteria.find(c=>!validRating(ratings[c.key]))?.key||criterion;renderWorkspace();focusNext=true;
     announce(`${criteria.find(c=>c.key===criterion).label}: ${rating} de 4 guardado en este dispositivo. ${criterionCount(currentAnswer())} de 3 criterios completos.`);
+    if(isRated(currentAnswer())&&autoBatchReady())void sendPending();
   }catch(error){state.retryVote={criterion,rating};saveError(error);}
   finally{setBusy(false);if(focusNext)focusRatingControl();}
 }
@@ -341,7 +343,7 @@ document.addEventListener('keydown',event=>{
   if(/^[1-4]$/.test(event.key)){event.preventDefault();void vote(state.activeCriterion,Number(event.key));}
 },true);
 window.addEventListener('beforeunload',event=>{if(state.dirty||state.notePromise||state.busy||state.retryVote){event.preventDefault();event.returnValue='';}});
-window.addEventListener('online',()=>{if(state.queue&&(pendingItems().filter(isRated).length>=10||state.pendingDoc?.inFlight))void sendPending();});
+window.addEventListener('online',()=>{if(state.queue&&(autoBatchReady()||state.pendingDoc?.inFlight))void sendPending();});
 let previousMobileLayout=mobileLayout();
 window.addEventListener('resize',()=>{
   const mobile=mobileLayout(),enteredMobile=mobile&&!previousMobileLayout;previousMobileLayout=mobile;

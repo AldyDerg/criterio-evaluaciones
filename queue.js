@@ -12,6 +12,7 @@
   const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   const answerKey = a => JSON.stringify([a.caseId, a.questionId]);
   const RUBRIC_VERSION = 'sacks-motivo-3x4-v1';
+  const BATCH_SIZE = 5;
   const CRITERIA = ['clinicalRelevance', 'clarityCoherence', 'noHallucination'];
   const validScore = value => Number.isInteger(value) && value >= 1 && value <= 4;
   const complete = answer => CRITERIA.every(key => validScore(answer?.ratings?.[key]));
@@ -84,12 +85,12 @@
       return this.store.change(this.key,doc=>{
         if(doc.blocked)return {blocked:doc.blocked};
         if(doc.inFlight)return doc.inFlight;
-        // Automatic batches contain ten complete questions (thirty scores).
+        // Automatic batches contain complete questions.
         // Explicit save/pause also sends unfinished questions, without counting
         // them as completed. Every click is already durable in IndexedDB.
         const values=Object.values(doc.pending).filter(a=>force||complete(a));
-        if(!values.length||(!force&&values.length<10))return null;
-        const chosen=values.slice(0,10), tokens={};
+        if(!values.length||(!force&&values.length<BATCH_SIZE))return null;
+        const chosen=values.slice(0,BATCH_SIZE), tokens={};
         const evaluations=chosen.map(a=>{tokens[answerKey(a)]=a.opId;const {caseId,questionId,ratings,expectedRevision,comment}=a;return {caseId,questionId,ratings:clone(ratings),expectedRevision,...(comment?{comment}:{})};});
         const payload={...this.scope,batchId:this.uuid(),evaluations};
         doc.inFlight={payload,tokens,attempts:0};return doc.inFlight;
@@ -134,7 +135,7 @@
       return this.syncPromise;
     }
   }
-  const exported={IndexedDbStore,Outbox,answerKey,complete,CRITERIA,RUBRIC_VERSION,storageName};
+  const exported={IndexedDbStore,Outbox,answerKey,complete,CRITERIA,RUBRIC_VERSION,BATCH_SIZE,storageName};
   if(typeof module!=='undefined'&&module.exports)module.exports=exported;
   root.CriterioQueue=exported;
 })(typeof window!=='undefined'?window:globalThis);
